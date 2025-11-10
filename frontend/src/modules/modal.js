@@ -2,6 +2,7 @@ import { t } from '../i18n/index.js';
 import { escapeHtml } from '../utils/format.js';
 import { addEndpoint, updateEndpoint, removeEndpoint, testEndpoint, updatePort } from './config.js';
 import { setTestState, clearTestState } from './endpoints.js';
+import * as api from '../utils/api.js';
 
 let currentEditIndex = -1;
 
@@ -52,12 +53,14 @@ export function showCloseActionDialog() {
 
 export function quitApplication() {
     document.getElementById('closeActionDialog').classList.remove('active');
-    window.go.main.App.Quit();
+    // In web version, we can't quit the application, just close the dialog
+    console.log('Quit action requested - not applicable in web version');
 }
 
 export function minimizeToTray() {
     document.getElementById('closeActionDialog').classList.remove('active');
-    window.go.main.App.HideWindow();
+    // In web version, we can't minimize to tray
+    console.log('Minimize to tray action - not applicable in web version');
 }
 
 // Toggle password visibility
@@ -90,8 +93,7 @@ export function showAddEndpointModal() {
 
 export async function editEndpoint(index) {
     currentEditIndex = index;
-    const configStr = await window.go.main.App.GetConfig();
-    const config = JSON.parse(configStr);
+    const config = await api.getConfig();
     const ep = config.endpoints[index];
 
     document.getElementById('modalTitle').textContent = t('modal.editEndpoint');
@@ -140,9 +142,8 @@ export async function saveEndpoint() {
 
 export async function deleteEndpoint(index) {
     try {
-        const config = await window.go.main.App.GetConfig();
-        const endpoints = JSON.parse(config).endpoints;
-        const endpointName = endpoints[index].name;
+        const config = await api.getConfig();
+        const endpointName = config.endpoints[index].name;
 
         const confirmed = await showConfirm(t('modal.confirmDelete').replace('{name}', endpointName));
         if (!confirmed) {
@@ -184,8 +185,7 @@ export function handleTransformerChange() {
 
 // Port Modal
 export async function showEditPortModal() {
-    const configStr = await window.go.main.App.GetConfig();
-    const config = JSON.parse(configStr);
+    const config = await api.getConfig();
 
     document.getElementById('portInput').value = config.port;
     document.getElementById('portModal').classList.add('active');
@@ -218,7 +218,7 @@ export async function showWelcomeModal() {
     document.getElementById('welcomeModal').classList.add('active');
 
     try {
-        const version = await window.go.main.App.GetVersion();
+        const version = await api.getVersion();
         document.querySelector('#welcomeModal .modal-header h2').textContent = `👋 Welcome to ccNexus v${version}`;
     } catch (error) {
         console.error('Failed to load version:', error);
@@ -300,13 +300,9 @@ export function closeTestResultModal() {
 
 // External URLs
 export function openGitHub() {
-    if (window.go?.main?.App) {
-        window.go.main.App.OpenURL('https://github.com/lich0821/ccNexus');
-    }
+    window.open('https://github.com/lich0821/ccNexus', '_blank');
 }
 
 export function openArticle() {
-    if (window.go?.main?.App) {
-        window.go.main.App.OpenURL('https://mp.weixin.qq.com/s/ohtkyIMd5YC7So1q-gE0og');
-    }
+    window.open('https://mp.weixin.qq.com/s/ohtkyIMd5YC7So1q-gE0og', '_blank');
 }

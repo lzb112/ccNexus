@@ -1,5 +1,6 @@
 // WebDAV management
 import { t } from '../i18n/index.js';
+import * as api from '../utils/api.js';
 
 // Global variables to store WebDAV config
 let currentWebDAVConfig = {
@@ -130,8 +131,7 @@ function hideModal() {
 // Load WebDAV config from backend
 async function loadWebDAVConfig() {
     try {
-        const configStr = await window.go.main.App.GetConfig();
-        const config = JSON.parse(configStr);
+        const config = await api.getConfig();
 
         if (config.webdav) {
             currentWebDAVConfig = {
@@ -238,7 +238,7 @@ window.saveDataSyncConfig = async function() {
     }
 
     try {
-        await updateWebDAVConfig(url, username, password);
+        await api.updateWebDAVConfig(url, username, password);
         currentWebDAVConfig = { url, username, password };
         connectionTestPassed = false; // Reset after save
         showNotification(t('webdav.configSaved'), 'success');
@@ -269,8 +269,7 @@ window.testDataSyncConnection = async function() {
 
     try {
         // Test connection without saving
-        const resultStr = await window.go.main.App.TestWebDAVConnection(url, username, password);
-        const result = JSON.parse(resultStr);
+        const result = await api.testWebDAVConnection(url, username, password);
         if (result.success) {
             connectionTestPassed = true;
             showNotification(result.message, 'success');
@@ -301,13 +300,12 @@ window.closeDataSyncDialog = function() {
 
 // Update WebDAV configuration
 export async function updateWebDAVConfig(url, username, password) {
-    await window.go.main.App.UpdateWebDAVConfig(url, username, password);
+    return api.updateWebDAVConfig(url, username, password);
 }
 
 // Test WebDAV connection (deprecated - use direct call with parameters)
 export async function testWebDAVConnection(url, username, password) {
-    const resultStr = await window.go.main.App.TestWebDAVConnection(url, username, password);
-    return JSON.parse(resultStr);
+    return api.testWebDAVConnection(url, username, password);
 }
 
 // Generate default backup filename
@@ -332,7 +330,7 @@ export async function backupToWebDAV() {
     }
 
     try {
-        await window.go.main.App.BackupToWebDAV(filename);
+        await api.backupToWebDAV(filename);
         showNotification(t('webdav.backupSuccess'), 'success');
     } catch (error) {
         showNotification(t('webdav.backupFailed') + ': ' + error, 'error');
@@ -341,58 +339,27 @@ export async function backupToWebDAV() {
 
 // Restore from WebDAV
 export async function restoreFromWebDAV(filename) {
-    // Detect conflict first
-    const conflictStr = await window.go.main.App.DetectWebDAVConflict(filename);
-    const conflictResult = JSON.parse(conflictStr);
-
-    if (!conflictResult.success) {
-        showNotification(t('webdav.conflictDetectionFailed') + ': ' + conflictResult.message, 'error');
-        return;
-    }
-
-    const conflictInfo = conflictResult.conflictInfo;
-
-    // If there's a conflict, show conflict dialog
-    if (conflictInfo.hasConflict) {
-        const choice = await showConflictDialog(conflictInfo);
-        if (!choice) {
-            return; // User cancelled
-        }
-
-        try {
-            await window.go.main.App.RestoreFromWebDAV(filename, choice);
-            if (choice === 'remote') {
-                showNotification(t('webdav.restoreSuccess'), 'success');
-                // Reload config
-                window.location.reload();
-            }
-        } catch (error) {
-            showNotification(t('webdav.restoreFailed') + ': ' + error, 'error');
-        }
-    } else {
-        // No conflict, restore directly
-        try {
-            await window.go.main.App.RestoreFromWebDAV(filename, 'remote');
-            showNotification(t('webdav.restoreSuccess'), 'success');
-            // Reload config
-            window.location.reload();
-        } catch (error) {
-            showNotification(t('webdav.restoreFailed') + ': ' + error, 'error');
-        }
+    // In web version, we don't have conflict detection, just restore directly
+    try {
+        await api.restoreFromWebDAV(filename, 'remote');
+        showNotification(t('webdav.restoreSuccess'), 'success');
+        // Reload config
+        window.location.reload();
+    } catch (error) {
+        showNotification(t('webdav.restoreFailed') + ': ' + error, 'error');
     }
 }
 
 // List WebDAV backups
 export async function listWebDAVBackups() {
-    const resultStr = await window.go.main.App.ListWebDAVBackups();
-    return JSON.parse(resultStr);
+    return api.listWebDAVBackups();
 }
 
 // Delete WebDAV backups
 export async function deleteWebDAVBackups(filenames) {
     try {
-        await window.go.main.App.DeleteWebDAVBackups(filenames);
-        showNotification(t('webdav.deleteSuccess'), 'success');
+        // For web version, show a warning that delete is not supported
+        showNotification('Delete function not available in web version', 'warning');
     } catch (error) {
         showNotification(t('webdav.deleteFailed') + ': ' + error, 'error');
     }

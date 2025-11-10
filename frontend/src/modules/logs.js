@@ -1,14 +1,12 @@
 import { t } from '../i18n/index.js';
+import * as api from '../utils/api.js';
 
 let logPanelExpanded = true;
 
 export async function loadLogs() {
     try {
-        if (!window.go?.main?.App) return;
-
         const level = parseInt(document.getElementById('logLevel').value);
-        const logsStr = await window.go.main.App.GetLogsByLevel(level);
-        const logs = JSON.parse(logsStr);
+        const logs = await api.getLogsByLevel(level);
 
         renderLogs(logs);
     } catch (error) {
@@ -62,7 +60,7 @@ export function toggleLogPanel() {
 export async function changeLogLevel() {
     const level = parseInt(document.getElementById('logLevel').value);
     try {
-        await window.go.main.App.SetLogLevel(level);
+        await api.setLogLevel(level);
         loadLogs();
     } catch (error) {
         console.error('Failed to change log level:', error);
@@ -85,7 +83,7 @@ export function copyLogs() {
 
 export async function clearLogs() {
     try {
-        await window.go.main.App.ClearLogs();
+        await api.clearLogs();
         loadLogs();
     } catch (error) {
         console.error('Failed to clear logs:', error);

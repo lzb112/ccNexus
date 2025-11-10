@@ -1,19 +1,9 @@
 // Configuration management
+import * as api from '../utils/api.js';
+
 export async function loadConfig() {
     try {
-        if (!window.go?.main?.App) {
-            console.error('Not running in Wails environment');
-            document.getElementById('endpointList').innerHTML = `
-                <div class="empty-state">
-                    <p>⚠️ Please run this app through Wails</p>
-                    <p>Use: wails dev or run the built application</p>
-                </div>
-            `;
-            return null;
-        }
-
-        const configStr = await window.go.main.App.GetConfig();
-        const config = JSON.parse(configStr);
+        const config = await api.getConfig();
 
         document.getElementById('proxyPort').textContent = config.port;
         document.getElementById('totalEndpoints').textContent = config.endpoints.length;
@@ -29,26 +19,25 @@ export async function loadConfig() {
 }
 
 export async function updatePort(port) {
-    await window.go.main.App.UpdatePort(port);
+    return api.updatePort(port);
 }
 
 export async function addEndpoint(name, url, key, transformer, model, remark) {
-    await window.go.main.App.AddEndpoint(name, url, key, transformer, model, remark || '');
+    return api.addEndpoint(name, url, key, transformer, model, remark || '');
 }
 
 export async function updateEndpoint(index, name, url, key, transformer, model, remark) {
-    await window.go.main.App.UpdateEndpoint(index, name, url, key, transformer, model, remark || '');
+    return api.updateEndpoint(index, name, url, key, transformer, model, remark || '');
 }
 
 export async function removeEndpoint(index) {
-    await window.go.main.App.RemoveEndpoint(index);
+    return api.removeEndpoint(index);
 }
 
 export async function toggleEndpoint(index, enabled) {
-    await window.go.main.App.ToggleEndpoint(index, enabled);
+    return api.toggleEndpoint(index, enabled);
 }
 
 export async function testEndpoint(index) {
-    const resultStr = await window.go.main.App.TestEndpoint(index);
-    return JSON.parse(resultStr);
+    return api.testEndpoint(index);
 }

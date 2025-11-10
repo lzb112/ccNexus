@@ -1,4 +1,5 @@
 import { formatTokens } from '../utils/format.js';
+import * as api from '../utils/api.js';
 
 let endpointStats = {};
 
@@ -8,8 +9,7 @@ export function getEndpointStats() {
 
 export async function loadStats() {
     try {
-        const statsStr = await window.go.main.App.GetStats();
-        const stats = JSON.parse(statsStr);
+        const stats = await api.getStats();
 
         document.getElementById('totalRequests').textContent = stats.totalRequests;
 

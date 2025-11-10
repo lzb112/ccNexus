@@ -2,92 +2,71 @@ package main
 
 import (
 	"embed"
-	"log"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/lich0821/ccNexus/internal/config"
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/mac"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	"github.com/lich0821/ccNexus/internal/logger"
+	"github.com/lich0821/ccNexus/internal/server"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
-//go:embed build/appicon.png
-var trayIcon []byte
-
 func main() {
-	app := NewApp(trayIcon)
+	// Parse command line flags
+	port := flag.Int("port", 8080, "Port to listen on")
+	host := flag.String("host", "127.0.0.1", "Host to listen on")
+	flag.Parse()
 
-	// Load configuration to get window size
-	configPath, err := config.GetConfigPath()
-	if err != nil {
-		log.Printf("Warning: Failed to get config path: %v, using defaults", err)
-		configPath = "config.json"
+	// Initialize logger
+	logger.GetLogger() // Initialize the logger
+	defer logger.GetLogger().Close()
+
+	// Create app instance
+	app := NewApp()
+
+	// Startup
+	if err := app.Startup(); err != nil {
+		logger.Error("Failed to startup: %v", err)
+		os.Exit(1)
 	}
 
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		log.Printf("Warning: Failed to load config: %v, using defaults", err)
-		cfg = config.DefaultConfig()
+	// Create HTTP server
+	httpServer := server.NewServer(app)
+
+	// Setup static files
+	if err := httpServer.SetupStaticFiles(assets); err != nil {
+		logger.Error("Failed to setup static files: %v", err)
+		os.Exit(1)
 	}
 
-	// Get window size from config
-	windowWidth, windowHeight := cfg.GetWindowSize()
-	// Use defaults if not set or invalid
-	if windowWidth <= 0 {
-		windowWidth = 1024
-	}
-	if windowHeight <= 0 {
-		windowHeight = 768
+	// Start server in background
+	addr := fmt.Sprintf("%s:%d", *host, *port)
+	go func() {
+		if err := httpServer.Start(addr); err != nil && err != http.ErrServerClosed {
+			logger.Error("Server error: %v", err)
+		}
+	}()
+
+	// Print startup message
+	fmt.Printf("🚀 Server running at http://%s:%d\n", *host, *port)
+	fmt.Printf("📝 API documentation at http://%s:%d/api\n", *host, *port)
+
+	// Wait for interrupt signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+
+	// Shutdown
+	logger.Info("Shutting down...")
+	app.Shutdown()
+	if err := httpServer.Shutdown(); err != nil {
+		logger.Error("Error shutting down server: %v", err)
 	}
 
-	err = wails.Run(&options.App{
-		Title:       "ccNexus",
-		Width:       windowWidth,
-		Height:      windowHeight,
-		StartHidden: false,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
-		BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 255},
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
-		OnBeforeClose:    app.beforeClose,
-		Bind: []interface{}{
-			app,
-		},
-		Frameless:     false,
-		Fullscreen:    false,
-		MinWidth:      800,
-		MinHeight:     600,
-		DisableResize: false,
-		Mac: &mac.Options{
-			TitleBar: &mac.TitleBar{
-				TitlebarAppearsTransparent: false,
-				HideTitle:                  false,
-				HideTitleBar:               false,
-				FullSizeContent:            false,
-				UseToolbar:                 false,
-				HideToolbarSeparator:       false,
-			},
-			WebviewIsTransparent: false,
-			WindowIsTranslucent:  false,
-			About: &mac.AboutInfo{
-				Title:   "ccNexus",
-				Message: "© 2024 ccNexus\n\nA smart API endpoint rotation proxy for Claude Code",
-			},
-		},
-		Windows: &windows.Options{
-			WebviewIsTransparent: false,
-			WindowIsTranslucent:  false,
-			DisableWindowIcon:    false,
-		},
-	})
-
-	if err != nil {
-		log.Fatal(err)
-	}
+	logger.Info("Goodbye!")
 }

@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,20 +14,11 @@ import (
 	"github.com/lich0821/ccNexus/internal/config"
 	"github.com/lich0821/ccNexus/internal/logger"
 	"github.com/lich0821/ccNexus/internal/proxy"
-	"github.com/lich0821/ccNexus/internal/tray"
 	"github.com/lich0821/ccNexus/internal/webdav"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-//go:embed wails.json
-var wailsJSON []byte
-
-// WailsInfo represents the info section from wails.json
-type WailsInfo struct {
-	Info struct {
-		ProductVersion string `json:"productVersion"`
-	} `json:"info"`
-}
+// Application version
+const AppVersion = "1.3.0"
 
 // Test endpoint constants
 const (
@@ -50,27 +39,19 @@ func normalizeAPIUrl(apiUrl string) string {
 
 // App struct
 type App struct {
-	ctx        context.Context
 	config     *config.Config
 	proxy      *proxy.Proxy
 	configPath string
 	ctxMutex   sync.RWMutex
-	trayIcon   []byte
 }
 
 // NewApp creates a new App application struct
-func NewApp(trayIcon []byte) *App {
-	return &App{
-		trayIcon: trayIcon,
-	}
+func NewApp() *App {
+	return &App{}
 }
 
-// startup is called when the app starts
-func (a *App) startup(ctx context.Context) {
-	a.ctxMutex.Lock()
-	a.ctx = ctx
-	a.ctxMutex.Unlock()
-
+// Startup initializes the application
+func (a *App) Startup() error {
 	logger.Info("Application starting...")
 
 	// Enable debug file logging when DEBUG environment variable is set
@@ -112,9 +93,6 @@ func (a *App) startup(ctx context.Context) {
 	// Create proxy
 	a.proxy = proxy.New(cfg)
 
-	// Initialize system tray first
-	a.initTray()
-
 	// Start proxy in background
 	go func() {
 		if err := a.proxy.Start(); err != nil {
@@ -122,15 +100,12 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}()
 
-	// Wait for tray to initialize, then show window
-	time.Sleep(300 * time.Millisecond)
-	runtime.WindowShow(ctx)
-
 	logger.Info("Application started successfully")
+	return nil
 }
 
-// shutdown is called when the app is closing
-func (a *App) shutdown(ctx context.Context) {
+// Shutdown is called when the app is shutting down
+func (a *App) Shutdown() {
 	if a.proxy != nil {
 		// Save stats before stopping
 		if err := a.proxy.GetStats().Save(); err != nil {
@@ -142,104 +117,15 @@ func (a *App) shutdown(ctx context.Context) {
 	logger.GetLogger().Close()
 }
 
-// initTray initializes the system tray
-func (a *App) initTray() {
-	lang := a.config.GetLanguage()
-	if lang == "" {
-		lang = a.GetSystemLanguage()
-	}
-	tray.Setup(a.trayIcon, a.ShowWindow, a.HideWindow, a.Quit, lang)
-}
-
-// ShowWindow shows the application window
-func (a *App) ShowWindow() {
-	a.ctxMutex.RLock()
-	ctx := a.ctx
-	a.ctxMutex.RUnlock()
-
-	if ctx != nil {
-		runtime.WindowShow(ctx)
-	}
-}
-
-// HideWindow hides the application window
-func (a *App) HideWindow() {
-	a.ctxMutex.RLock()
-	ctx := a.ctx
-	a.ctxMutex.RUnlock()
-
-	if ctx != nil {
-		runtime.WindowHide(ctx)
-	}
-}
-
-// beforeClose is called when the window is about to close
-func (a *App) beforeClose(ctx context.Context) bool {
-	// Save current window size before showing close dialog
-	a.saveWindowSize(ctx)
-
-	// Emit event to show close action dialog
-	runtime.EventsEmit(ctx, "show-close-dialog")
-
-	// Return true to prevent window close (dialog will handle the action)
-	return true
-}
-
-// saveWindowSize saves the current window size to config
-func (a *App) saveWindowSize(ctx context.Context) {
-	// Get current window size
-	width, height := runtime.WindowGetSize(ctx)
-
-	// Only save if size is valid
-	if width > 0 && height > 0 {
-		a.config.UpdateWindowSize(width, height)
-		if err := a.config.Save(a.configPath); err != nil {
-			logger.Warn("Failed to save window size: %v", err)
-		} else {
-			logger.Debug("Window size saved: %dx%d", width, height)
-		}
-	}
-}
-
-// Quit quits the application
-func (a *App) Quit() {
-	logger.Info("Quitting application...")
-
-	// Save window size before quitting
-	a.ctxMutex.RLock()
-	ctx := a.ctx
-	a.ctxMutex.RUnlock()
-
-	if ctx != nil {
-		a.saveWindowSize(ctx)
-	}
-
-	// Save stats and cleanup
-	if a.proxy != nil {
-		if err := a.proxy.GetStats().Save(); err != nil {
-			logger.Warn("Failed to save stats: %v", err)
-		}
-		a.proxy.Stop()
-	}
-	logger.GetLogger().Close()
-
-	os.Exit(0)
-}
-
 // GetConfig returns the current configuration
 func (a *App) GetConfig() string {
 	data, _ := json.Marshal(a.config)
 	return string(data)
 }
 
-// GetVersion returns the application version from wails.json
+// GetVersion returns the application version
 func (a *App) GetVersion() string {
-	var info WailsInfo
-	if err := json.Unmarshal(wailsJSON, &info); err != nil {
-		logger.Warn("Failed to parse wails.json for version: %v", err)
-		return "unknown"
-	}
-	return info.Info.ProductVersion
+	return AppVersion
 }
 
 // UpdateConfig updates the configuration
@@ -451,11 +337,6 @@ func (a *App) ToggleEndpoint(index int, enabled bool) error {
 	return a.config.Save(a.configPath)
 }
 
-// OpenURL opens a URL in the default browser
-func (a *App) OpenURL(url string) {
-	runtime.BrowserOpenURL(a.ctx, url)
-}
-
 // GetLogs returns all log entries
 func (a *App) GetLogs() string {
 	logs := logger.GetLogger().GetLogs()
@@ -532,8 +413,8 @@ func (a *App) SetLanguage(language string) error {
 		return fmt.Errorf("failed to save language: %w", err)
 	}
 
-	// Update tray menu language
-	tray.UpdateLanguage(language)
+	// In web version, tray is not available
+	// tray.UpdateLanguage(language) - removed for web version
 
 	logger.Info("Language changed to: %s", language)
 	return nil
@@ -1091,4 +972,3 @@ func (a *App) DetectWebDAVConflict(filename string) string {
 	data, _ := json.Marshal(result)
 	return string(data)
 }
-

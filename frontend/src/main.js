@@ -1,5 +1,4 @@
 import './style.css'
-import '../wailsjs/runtime/runtime.js'
 import { setLanguage } from './i18n/index.js'
 import { initUI, changeLanguage } from './modules/ui.js'
 import { loadConfig } from './modules/config.js'
@@ -31,16 +30,12 @@ import {
     quitApplication,
     minimizeToTray
 } from './modules/modal.js'
+import * as api from './utils/api.js'
 
 // Load data on startup
 window.addEventListener('DOMContentLoaded', async () => {
-    // Wait for Wails runtime to be ready
-    while (!window.go) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
     // Initialize language
-    const lang = await window.go.main.App.GetLanguage();
+    const lang = await api.getLanguage();
     setLanguage(lang);
 
     // Initialize UI
@@ -48,7 +43,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     // Load and display version
     try {
-        const version = await window.go.main.App.GetVersion();
+        const version = await api.getVersion();
         document.getElementById('appVersion').textContent = version;
     } catch (error) {
         console.error('Failed to get version:', error);
@@ -60,7 +55,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     // Restore log level from config
     try {
-        const logLevel = await window.go.main.App.GetLogLevel();
+        const logLevel = await api.getLogLevel();
         document.getElementById('logLevel').value = logLevel;
     } catch (error) {
         console.error('Failed to get log level:', error);
@@ -71,9 +66,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     // Refresh stats every 5 seconds
     setInterval(async () => {
         await loadStats();
-        const config = await window.go.main.App.GetConfig();
+        const config = await api.getConfig();
         if (config) {
-            renderEndpoints(JSON.parse(config).endpoints);
+            renderEndpoints(config.endpoints);
         }
     }, 5000);
 
@@ -83,18 +78,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     // Show welcome modal on first launch
     showWelcomeModalIfFirstTime();
 
-    // Listen for close dialog event from backend
-    if (window.runtime) {
-        window.runtime.EventsOn('show-close-dialog', () => {
-            showCloseActionDialog();
-        });
-    }
-
-    // Handle Cmd/Ctrl+W to hide window
+    // Handle Cmd/Ctrl+W to hide window (web version: just a placeholder)
     window.addEventListener('keydown', (e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
             e.preventDefault();
-            window.runtime.WindowHide();
+            console.log('Close action - in web version, this would close the browser tab');
         }
     });
 });
@@ -136,3 +124,5 @@ window.showCloseActionDialog = showCloseActionDialog;
 window.quitApplication = quitApplication;
 window.minimizeToTray = minimizeToTray;
 window.showDataSyncDialog = showDataSyncDialog;
+
+

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * ccNexus 运行脚本
- * 默认: 开发模式
+ * ccNexus Web版 运行脚本
+ * 默认: 开发模式（前端构建）
  * 构建: node run.mjs -b 或 node run.mjs --build
  */
 
@@ -91,9 +91,28 @@ async function installFrontendDeps() {
   }
 }
 
-// 安装 Wails
-async function installWails() {
-  log.info('🔧 准备安装 Wails...')
+// 构建前端
+async function buildFrontend() {
+  log.info('🏗️  构建前端...')
+  const frontendDir = join(__dirname, 'frontend')
+
+  // 检查前端依赖
+  if (!checkFrontendDeps()) {
+    await installFrontendDeps()
+  }
+
+  try {
+    await runCommand('npm', ['run', 'build'], { cwd: frontendDir })
+    log.success('前端构建完成')
+  } catch (error) {
+    log.error('前端构建失败')
+    throw error
+  }
+}
+
+// 开发模式
+async function dev() {
+  log.title('🚀 启动 ccNexus Web 版开发模式')
 
   // 检查 Go 是否安装
   if (!(await commandExists('go'))) {
@@ -101,113 +120,82 @@ async function installWails() {
     process.exit(1)
   }
 
-  // 配置国内镜像
-  const goEnv = {
-    ...process.env,
-    GOPROXY: 'https://goproxy.cn,direct',
-    GOSUMDB: 'sum.golang.org',
-  }
-
-  log.info('📦 使用国内镜像加速安装...')
-  log.info('GOPROXY=https://goproxy.cn,direct')
-
-  try {
-    // 安装 Wails
-    await runCommand(
-      'go',
-      ['install', 'github.com/wailsapp/wails/v2/cmd/wails@latest'],
-      { env: goEnv }
-    )
-    log.success('Wails 安装成功！')
-
-    // 提示添加 GOPATH/bin 到 PATH
-    log.warn('请确保 $GOPATH/bin 或 $HOME/go/bin 已添加到 PATH 环境变量')
-  } catch (error) {
-    log.error('Wails 安装失败')
-    throw error
-  }
-}
-
-// 检查 Wails
-async function checkWails() {
-  if (!(await commandExists('wails'))) {
-    log.warn('未找到 wails 命令')
-    log.info('正在自动安装 Wails (使用国内镜像加速)...')
-
-    try {
-      await installWails()
-
-      // 再次检查
-      if (!(await commandExists('wails'))) {
-        log.error('Wails 安装后仍未找到命令')
-        log.info('请手动添加 $GOPATH/bin 到 PATH，或重启终端后再试')
-        log.info('GOPATH 路径: ' + (process.env.GOPATH || '$HOME/go'))
-        process.exit(1)
-      }
-    } catch (error) {
-      log.error('自动安装失败，请手动安装:')
-      log.info('GOPROXY=https://goproxy.cn,direct go install github.com/wailsapp/wails/v2/cmd/wails@latest')
-      process.exit(1)
-    }
-  }
-}
-
-// 开发模式
-async function dev() {
-  log.title('🚀 启动 ccNexus 开发模式')
-
-  await checkWails()
-
-  // 检查前端依赖
+  // 检查前端依赖并启动前端开发服务器
   if (!checkFrontendDeps()) {
     await installFrontendDeps()
   }
 
-  // 启动开发服务器
-  log.info('🔧 启动开发服务器...')
+  log.info('🔧 启动前端开发服务器...')
+  const frontendDir = join(__dirname, 'frontend')
+  
+  // 启动前端开发服务器
+  const frontendProcess = spawn('npm', ['run', 'dev'], {
+    stdio: 'inherit',
+    shell: true,
+    cwd: frontendDir,
+  })
+
+  frontendProcess.on('error', (error) => {
+    log.error('前端服务器启动失败: ' + error.message)
+  })
+
+  // 配置国内镜像
+  const goEnv = {
+    ...process.env,
+    GOPROXY: 'https://goproxy.cn,direct',
+  }
+
+  log.info('⏳ 等待前端构建完成...')
+  await new Promise(resolve => setTimeout(resolve, 3000))
+
+  log.info('🔧 启动后端 Go 服务...')
+  log.info('访问 http://localhost:8080')
+  
   try {
-    await runCommand('wails', ['dev'])
+    await runCommand('go', ['run', 'main.go'], { env: goEnv })
   } catch (error) {
-    log.error('开发服务器启动失败')
+    log.error('后端启动失败')
     process.exit(1)
   }
 }
 
 // 构建
 async function build(options = {}) {
-  log.title('🏗️  构建 ccNexus')
+  log.title('🏗️  构建 ccNexus Web 版')
 
-  await checkWails()
-
-  // 检查前端依赖
-  if (!checkFrontendDeps()) {
-    await installFrontendDeps()
+  // 检查 Go 是否安装
+  if (!(await commandExists('go'))) {
+    log.error('未找到 Go 命令，请先安装 Go: https://golang.org/dl/')
+    process.exit(1)
   }
 
-  // 构建参数
-  const args = ['build']
+  // 构建前端
+  await buildFrontend()
 
-  if (options.clean !== false) {
-    args.push('-clean')
+  // 构建 Go 应用
+  log.title('🏗️  构建 Go 应用')
+
+  // 配置国内镜像
+  const goEnv = {
+    ...process.env,
+    GOPROXY: 'https://goproxy.cn,direct',
   }
+
+  const buildDir = join(__dirname, 'build', 'bin')
+  let args = ['build', '-o', join(buildDir, 'ccNexus')]
 
   if (options.prod) {
-    args.push('-upx', '-ldflags', '-w -s')
+    args.push('-ldflags', '-w -s')
     log.info('🎯 生产模式构建（启用优化和压缩）')
   }
 
-  if (options.platform) {
-    args.push('-platform', options.platform)
-    log.info(`🎯 构建平台: ${options.platform}`)
-  }
+  args.push('main.go')
 
-  // 执行构建
-  log.info(`执行: wails ${args.join(' ')}`)
   try {
-    await runCommand('wails', args)
-    log.success('✅ 构建完成！输出位置: build/bin/')
+    await runCommand('go', args, { env: goEnv })
+    log.success('✅ 构建完成！输出位置: ' + buildDir + '/ccNexus')
   } catch (error) {
-    log.error('构建失败')
+    log.error('Go 构建失败')
     process.exit(1)
   }
 }
@@ -215,7 +203,7 @@ async function build(options = {}) {
 // 显示帮助信息
 function showHelp() {
   console.log(`
-${colors.bright}${colors.cyan}ccNexus 运行脚本${colors.reset}
+${colors.bright}${colors.cyan}ccNexus Web 版运行脚本${colors.reset}
 
 ${colors.bright}用法:${colors.reset}
   node run.mjs [选项]
@@ -224,25 +212,13 @@ ${colors.bright}选项:${colors.reset}
   ${colors.green}无参数${colors.reset}              开发模式（默认）
   ${colors.green}-b, --build${colors.reset}        构建模式
   ${colors.green}-p, --prod${colors.reset}         生产构建（优化+压缩）
-  ${colors.green}--platform <平台>${colors.reset}   指定构建平台
   ${colors.green}-h, --help${colors.reset}         显示帮助信息
 
-${colors.bright}平台选项:${colors.reset}
-  windows/amd64        Windows 64位
-  darwin/universal     macOS 通用版本
-  darwin/amd64         macOS Intel
-  darwin/arm64         macOS Apple Silicon
-  linux/amd64          Linux 64位
-
 ${colors.bright}示例:${colors.reset}
-  ${colors.cyan}node run.mjs${colors.reset}                    # 开发模式
-  ${colors.cyan}node run.mjs -b${colors.reset}                 # 标准构建
-  ${colors.cyan}node run.mjs --build --prod${colors.reset}     # 生产构建
-  ${colors.cyan}node run.mjs -b --platform windows/amd64${colors.reset}  # 构建 Windows 版本
-
-${colors.bright}快捷方式:${colors.reset}
-  ${colors.cyan}npm run dev${colors.reset}      或  ${colors.cyan}./dev.sh${colors.reset}     # 开发模式
-  ${colors.cyan}npm run build${colors.reset}    或  ${colors.cyan}./build.sh${colors.reset}   # 构建模式
+  ${colors.cyan}node run.mjs${colors.reset}                 # 开发模式
+  ${colors.cyan}npm start${colors.reset}                   # 开发模式（简写）
+  ${colors.cyan}node run.mjs -b${colors.reset}             # 标准构建
+  ${colors.cyan}node run.mjs -b -p${colors.reset}          # 生产构建
 `)
 }
 
@@ -260,18 +236,10 @@ async function main() {
   const isBuild = args.includes('-b') || args.includes('--build')
   const isProd = args.includes('-p') || args.includes('--prod')
 
-  // 获取平台参数
-  let platform = null
-  const platformIndex = args.indexOf('--platform')
-  if (platformIndex !== -1 && args[platformIndex + 1]) {
-    platform = args[platformIndex + 1]
-  }
-
   try {
     if (isBuild) {
       await build({
-        prod: isProd,
-        platform
+        prod: isProd
       })
     } else {
       await dev()
